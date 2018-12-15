@@ -1,11 +1,11 @@
 use std::fmt::{self, Debug};
 
+use ratel::ast::{ExpressionNode, Identifier};
 use ratel::Module;
-use ratel::ast::{Identifier, ExpressionNode};
-use ratel_visitor::{Visitable, ScopeKind, Visitor};
-use toolshed::{Arena, CopyCell};
+use ratel_visitor::{ScopeKind, Visitable, Visitor};
 use toolshed::list::GrowableList;
 use toolshed::map::BloomMap;
+use toolshed::{Arena, CopyCell};
 
 /// Traverse the AST and produce a tree of `Scope`s.
 #[inline]
@@ -98,23 +98,17 @@ struct ScopeAnalyzer<'ast> {
 impl<'ast> ScopeAnalyzer<'ast> {
     #[inline]
     fn new(arena: &'ast Arena) -> Self {
-        let current = CopyCell::new(
-            arena.alloc(Scope::new(ScopeKind::Function, None))
-        );
+        let current = CopyCell::new(arena.alloc(Scope::new(ScopeKind::Function, None)));
 
-        ScopeAnalyzer {
-            arena,
-            current,
-        }
+        ScopeAnalyzer { arena, current }
     }
 }
 
 impl<'ast> Visitor<'ast> for ScopeAnalyzer<'ast> {
     #[inline]
     fn on_enter_scope(&mut self, kind: ScopeKind) {
-        self.current.set(
-            self.arena.alloc(Scope::new(kind, Some(self.current.get())))
-        );
+        self.current
+            .set(self.arena.alloc(Scope::new(kind, Some(self.current.get()))));
     }
 
     #[inline]
@@ -132,7 +126,10 @@ impl<'ast> Visitor<'ast> for ScopeAnalyzer<'ast> {
 
     #[inline]
     fn on_reference_declaration(&mut self, ident: &Identifier<'ast>) {
-        self.current.get().declared_refs.insert(self.arena, *ident, ());
+        self.current
+            .get()
+            .declared_refs
+            .insert(self.arena, *ident, ());
     }
 
     #[inline]

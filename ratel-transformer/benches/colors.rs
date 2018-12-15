@@ -1,10 +1,10 @@
 #![feature(test)]
 
-extern crate test;
 extern crate ratel;
 extern crate ratel_transformer;
+extern crate test;
 
-use test::{Bencher, black_box};
+use test::{black_box, Bencher};
 
 static SOURCE: &'static str = r#"
 

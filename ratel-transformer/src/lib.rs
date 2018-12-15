@@ -5,11 +5,11 @@ extern crate ratel;
 extern crate ratel_visitor;
 extern crate toolshed;
 
-use toolshed::Arena;
-use toolshed::list::ListBuilder;
 use ratel::ast::{Loc, Node, NodeList};
 use ratel::Module;
 use ratel_visitor::{ScopeKind, Visitable};
+use toolshed::list::ListBuilder;
+use toolshed::Arena;
 
 pub mod es2015;
 // pub mod es2016;
@@ -26,7 +26,8 @@ pub struct TransformerCtxt<'ast> {
 
 impl<'ast> TransformerCtxt<'ast> {
     #[inline]
-    pub fn alloc<T, I>(&self, item: I) -> Node<'ast, T> where
+    pub fn alloc<T, I>(&self, item: I) -> Node<'ast, T>
+    where
         T: Copy,
         I: Into<T>,
     {
@@ -34,7 +35,8 @@ impl<'ast> TransformerCtxt<'ast> {
     }
 
     #[inline]
-    pub fn alloc_as_loc<T, I, L>(&self, loc: &Node<'ast, L>, item: I) -> Node<'ast, T> where
+    pub fn alloc_as_loc<T, I, L>(&self, loc: &Node<'ast, L>, item: I) -> Node<'ast, T>
+    where
         T: Copy + 'ast,
         I: Into<T>,
     {
@@ -42,15 +44,16 @@ impl<'ast> TransformerCtxt<'ast> {
     }
 
     #[inline]
-    pub fn list<T, I>(&mut self, source: I) -> NodeList<'ast, T> where
+    pub fn list<T, I>(&mut self, source: I) -> NodeList<'ast, T>
+    where
         T: 'ast + Copy,
-        I: AsRef<[Node<'ast, T>]>
+        I: AsRef<[Node<'ast, T>]>,
     {
         let mut iter = source.as_ref().into_iter();
 
         let builder = match iter.next() {
             Some(item) => ListBuilder::new(self.arena, *item),
-            None       => return NodeList::empty(),
+            None => return NodeList::empty(),
         };
 
         for item in iter {
@@ -61,14 +64,15 @@ impl<'ast> TransformerCtxt<'ast> {
     }
 
     #[inline]
-    pub fn swap<T, I>(&self, ptr: Node<'ast, T>, item: I) where
+    pub fn swap<T, I>(&self, ptr: Node<'ast, T>, item: I)
+    where
         T: Copy + 'ast,
         I: Into<T>,
     {
         let new = self.arena.alloc(Loc {
             start: ptr.start,
             end: ptr.end,
-            item: item.into()
+            item: item.into(),
         });
 
         ptr.set(new);
