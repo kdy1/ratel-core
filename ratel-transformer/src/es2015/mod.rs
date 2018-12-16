@@ -1,5 +1,6 @@
 mod arrow;
+mod classes;
 
-use self::arrow::TransformArrow;
+pub use self::{arrow::TransformArrow, classes::TransformClass};
 
 pub type PresetES2015<'ast> = TransformArrow<'ast>;
