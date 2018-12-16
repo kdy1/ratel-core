@@ -5,15 +5,17 @@ extern crate ratel;
 extern crate ratel_visitor;
 extern crate toolshed;
 
-use ratel::ast::{Loc, Node, NodeList};
-use ratel::Module;
+use ratel::{
+    ast::{Loc, Node, NodeList},
+    Module,
+};
 use ratel_visitor::{ScopeKind, Visitable};
-use toolshed::list::ListBuilder;
-use toolshed::Arena;
+use toolshed::{list::ListBuilder, Arena};
 
+#[cfg(test)]
+#[macro_use]
+mod tests;
 pub mod es2015;
-// pub mod es2016;
-
 pub mod scope;
 
 use self::scope::Scope;
@@ -44,7 +46,7 @@ impl<'ast> TransformerCtxt<'ast> {
     }
 
     #[inline]
-    pub fn list<T, I>(&mut self, source: I) -> NodeList<'ast, T>
+    pub fn list<T, I>(&self, source: I) -> NodeList<'ast, T>
     where
         T: 'ast + Copy,
         I: AsRef<[Node<'ast, T>]>,
