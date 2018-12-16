@@ -1,13 +1,19 @@
 use ratel::ast::{
     expression::{CallExpression, ClassExpression, FunctionExpression},
     statement::{BlockStatement, ClassStatement, DeclarationStatement, Declarator},
-    Class, DeclarationKind, Expression, ExpressionNode, Identifier, IdentifierNode, Name, NodeList,
-    OptionalName, Pattern, StatementNode,
+    Class, DeclarationKind, Expression, ExpressionNode, Identifier, IdentifierNode, Loc, Name,
+    NodeList, OptionalName, Pattern, Statement, StatementNode,
 };
 use ratel_visitor::Visitor;
-use toolshed::list::List;
+use toolshed::list::{List, ListBuilder};
 
 use TransformerCtxt;
+
+static INHERITS: &Loc<&str> = &Loc {
+    start: 0,
+    end: 0,
+    item: "_inherits",
+};
 
 pub struct TransformClass<'ast> {
     ctx: TransformerCtxt<'ast>,
@@ -67,12 +73,36 @@ impl<'ast> TransformClass<'ast> {
     fn class_to_stmts<N>(
         &mut self,
         class_name: Option<IdentifierNode<'ast>>,
-        super_ident: Option<Identifier<'ast>>,
+        super_class_ident: Option<IdentifierNode<'ast>>,
         class: &Class<'ast, N>,
     ) -> List<'ast, StatementNode<'ast>>
     where
         N: Name<'ast>,
     {
+        // Class name inside iife
+        let class_name = class_name.unwrap_or_else(|| self.ctx.alloc("_Class"));
+        let stmts = ListBuilder::new(self.ctx.arena, Statement::Empty);
+
+        if let Some(super_class_ident) = super_class_ident {
+            // TODO: inject helper methods
+            // self.helpers.inherits.store(true, Ordering::Relaxed);
+            // self.helpers
+            //     .possible_constructor_return
+            //     .store(true, Ordering::Relaxed);
+
+            let arguments = self.ctx.list([
+                self.ctx.alloc(Expression::Identifier(**class_name)),
+                self.ctx.alloc(Expression::Identifier(**super_class_ident)),
+            ]);
+            stmts.push(
+                self.ctx.arena,
+                Statement::Expression(self.ctx.alloc(Expression::Call(CallExpression {
+                    callee: self.ctx.alloc(Expression::Identifier(INHERITS)),
+                    arguments,
+                }))),
+            );
+        }
+
         unimplemented!()
     }
 }
