@@ -1,14 +1,14 @@
 use ratel::ast::{
     expression::{
-        BinaryExpression, CallExpression, ClassExpression, FunctionExpression, MemberExpression,
-        ThisExpression,
+        ArrayExpression, BinaryExpression, CallExpression, ClassExpression, FunctionExpression,
+        MemberExpression, ObjectExpression, ThisExpression,
     },
     statement::{
         BlockStatement, ClassStatement, DeclarationStatement, Declarator, ReturnStatement,
     },
     Block, Class, ClassMember, DeclarationKind, Expression, ExpressionNode, Function, Identifier,
-    IdentifierNode, MandatoryName, MethodKind, Name, NodeList, OperatorKind, OptionalName, Pattern,
-    Statement, StatementNode,
+    IdentifierNode, Literal, MandatoryName, MethodKind, Name, NodeList, OperatorKind, OptionalName,
+    Pattern, Property, PropertyKey, PropertyNode, Statement, StatementNode,
 };
 use ratel_visitor::Visitor;
 use std::iter;
@@ -87,7 +87,7 @@ impl<'ast> TransformClass<'ast> {
         // Class name inside iife
         let class_name = class_name.unwrap_or_else(|| self.ctx.alloc("_Class"));
         let class_name_expr = self.ctx.alloc(Expression::Identifier(**class_name));
-        let stmts = ListBuilder::new(self.ctx.arena, Statement::Empty);
+        let stmts = ListBuilder::new(self.ctx.arena, self.ctx.alloc(Statement::Empty));
 
         if let Some(super_class_ident) = super_class_ident {
             // TODO: inject helper methods
@@ -101,10 +101,13 @@ impl<'ast> TransformClass<'ast> {
             let arguments = self.ctx.list([child, parent]);
             stmts.push(
                 self.ctx.arena,
-                Statement::Expression(self.ctx.alloc(Expression::Call(CallExpression {
-                    callee: self.ctx.alloc(Expression::Identifier("_inherits")),
-                    arguments,
-                }))),
+                self.ctx
+                    .alloc(Statement::Expression(self.ctx.alloc(Expression::Call(
+                        CallExpression {
+                            callee: self.ctx.alloc(Expression::Identifier("_inherits")),
+                            arguments,
+                        },
+                    )))),
             );
         }
 
@@ -301,17 +304,152 @@ impl<'ast> TransformClass<'ast> {
 
             stmts.push(
                 self.ctx.arena,
-                Statement::Function(Function {
+                self.ctx.alloc(Statement::Function(Function {
                     name: MandatoryName(class_name),
                     body: self.ctx.alloc(Block {
                         body: body_builder.as_list(),
                     }),
                     ..function
-                }),
+                })),
             );
         }
 
-        unimplemented!()
+        let method_stmts = self.fold_class_methods(**class_name, class.body.body);
+        for stmt in method_stmts {
+            stmts.push(self.ctx.arena, *stmt);
+        }
+
+        stmts.as_list()
+    }
+
+    fn fold_class_methods(
+        &mut self,
+        class_name: Identifier<'ast>,
+        members: NodeList<'ast, ClassMember<'ast>>,
+    ) -> List<'ast, StatementNode<'ast>> {
+        /// { key: "prop" }
+        fn make_prop_key<'ast>(
+            ctx: TransformerCtxt<'ast>,
+            key: PropertyKey<'ast>,
+        ) -> PropertyNode<'ast> {
+            ctx.alloc(Property::Literal {
+                key: ctx.alloc(PropertyKey::Literal("key")),
+                value: match key {
+                    PropertyKey::Computed(e) => e,
+                    PropertyKey::Literal(s) => ctx.alloc(Expression::Literal(Literal::String(s))),
+                    PropertyKey::Binary(s) => unimplemented!("binary property key: {}", s),
+                },
+            })
+        }
+
+        fn make_arg_obj_for_create_class<'ast>(
+            ctx: TransformerCtxt<'ast>,
+            props: List<'ast, ExpressionNode<'ast>>,
+        ) -> ExpressionNode<'ast> {
+            if props.is_empty() {
+                return ctx.alloc(Expression::Literal(Literal::Null));
+            }
+            ctx.alloc(Expression::Array(ArrayExpression { body: props }))
+        }
+
+        /// Creates`_createClass(Foo, [{}], [{}]);`
+        fn make_create_class_call<'ast>(
+            ctx: TransformerCtxt<'ast>,
+            class_name: Identifier<'ast>,
+            methods: ExpressionNode<'ast>,
+            static_methods: Option<ExpressionNode<'ast>>,
+        ) -> StatementNode<'ast> {
+            let expr = Expression::Call(CallExpression {
+                callee: ctx.alloc(Expression::Identifier("_createClass")),
+                arguments: List::from_iter(
+                    ctx.arena,
+                    iter::once(ctx.alloc::<Expression, _>(class_name))
+                        .chain(iter::once(methods))
+                        .chain(static_methods),
+                ),
+            });
+            ctx.alloc(Statement::Expression(ctx.alloc(expr)))
+        }
+
+        let (props, static_props) = (
+            ListBuilder::new(self.ctx.arena, self.ctx.alloc(Expression::Void)),
+            ListBuilder::new(self.ctx.arena, self.ctx.alloc(Expression::Void)),
+        );
+
+        for member in members {
+            let (is_static, prop_name, kind, value) = match ***member {
+                ClassMember::Method {
+                    is_static,
+                    key,
+                    kind,
+                    value,
+                } => (is_static, key, kind, value),
+                ClassMember::Literal { .. } => unimplemented!("literal class member"),
+                _ => unreachable!(),
+            };
+
+            match kind {
+                // TODO: Report the error
+                MethodKind::Constructor => unreachable!(),
+                //
+                //  Foo.staticMethod
+                //  Foo.prototype.method
+                MethodKind::Method => {
+                    let append_to = if is_static { &static_props } else { &props };
+
+                    // TODO(kdy1): Handle super inside function body.
+                    //
+                    // value.visit_with(&mut SuperCallFolder {
+                    //     class_name: &class_name,
+                    // });
+
+                    let value = self.ctx.alloc(Expression::Function(Function {
+                        // TODO(kdy1): Function name when it's literal
+                        name: OptionalName(None),
+                        generator: value.generator,
+                        params: value.params,
+                        body: value.body,
+                    }));
+
+                    append_to.push(
+                        self.ctx.arena,
+                        self.ctx.alloc(Expression::Object(ObjectExpression {
+                            body: self.ctx.list(&[
+                                make_prop_key(self.ctx, **prop_name),
+                                self.ctx.alloc(Property::Literal {
+                                    key: self.ctx.alloc(PropertyKey::Literal("value")),
+                                    value,
+                                }),
+                            ]),
+                        })),
+                    );
+                }
+
+                _ => unimplemented!("getter / setter inside class"),
+            }
+        }
+
+        if props.as_list().iter().count() == 1 && static_props.as_list().iter().count() == 1 {
+            // Return empty list
+            return List::empty();
+        }
+
+        List::from(
+            self.ctx.arena,
+            make_create_class_call(
+                self.ctx,
+                class_name,
+                make_arg_obj_for_create_class(self.ctx, props.as_list()),
+                if static_props.as_list().iter().count() == 1 {
+                    None
+                } else {
+                    Some(make_arg_obj_for_create_class(
+                        self.ctx,
+                        static_props.as_list(),
+                    ))
+                },
+            ),
+        )
     }
 }
 
